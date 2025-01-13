@@ -10,6 +10,9 @@ from loguru import logger
 import os
 
 
+# Create tables
+Base.metadata.create_all(bind=engine)
+
 app = FastAPI()
 
 # Dependency for DB session
@@ -101,7 +104,6 @@ def calculate_next_run_time_for_creation(frequency: str, run_time: time) -> date
 
 if __name__ == "__main__":
     import uvicorn
-    Base.metadata.create_all(bind=engine)
     port = int(os.getenv("PORT", 8000))  # Default to 8000 if Railway doesn't provide a PORT variable
     uvicorn.run(app, host="0.0.0.0", port=port)
     
