@@ -1,20 +1,22 @@
-from typing import List, Optional
 from pydantic import BaseModel
+from typing import List
+from datetime import time
+
 
 class JobCreate(BaseModel):
-    frequency: str   # e.g. "daily", "hourly" (or a cron-like string if you prefer)
-    repeat: bool
+    frequency: str  # "daily", "weekly", "bi-weekly"
+    run_time: str   # or we can parse "HH:MM" into a time object
     number_of_days: int
     list_of_companies: List[str]
 
 class JobRead(BaseModel):
     id: int
     frequency: str
-    repeat: bool
+    run_time: str
     number_of_days: int
     list_of_companies: List[str]
     status: str
-    next_run_time: str
+    # next_run_time: str  # if you want to display it
 
     class Config:
         orm_mode = True
