@@ -12,7 +12,7 @@ class JobCreate(BaseModel):
 class JobRead(BaseModel):
     id: int
     frequency: str
-    run_time: str
+    run_time: time
     number_of_days: int
     list_of_companies: List[str]
     status: str
