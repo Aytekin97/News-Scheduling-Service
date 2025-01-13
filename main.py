@@ -32,21 +32,14 @@ def list_jobs(db: Session = Depends(get_db)):
 
 @app.post("/scheduler/jobs", response_model=JobRead)
 def create_job(job_data: JobCreate, db: Session = Depends(get_db)):
-    logger.info("Request received")
-    # Convert the string run_time (e.g. "00:00") into a time object
-    try:
-        run_time_parsed = datetime.strptime(job_data.run_time, "%H:%M").time()
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid run_time format. Use HH:MM (e.g., 00:00).")
-
     logger.info("Calculating next run")
     # Calculate the next_run_time based on the current date + run_time
-    initial_next_run = calculate_next_run_time_for_creation(job_data.frequency, run_time_parsed)
+    initial_next_run = calculate_next_run_time_for_creation(job_data.frequency, job_data.run_time)
 
     logger.info("Creating the job")
     job = ScheduledJob(
         frequency=job_data.frequency,
-        run_time=run_time_parsed,
+        run_time=job_data.run_time,
         number_of_days=job_data.number_of_days,
         list_of_companies=job_data.list_of_companies,
         next_run_time=initial_next_run
