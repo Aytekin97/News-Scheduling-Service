@@ -56,7 +56,7 @@ def create_job(
         return {
             "id": 0,  # Placeholder, since we're not creating a DB entry.
             "frequency": "Now",
-            "run_time": None,
+            "run_time": "00:00:00",
             "number_of_days": job_data.number_of_days,
             "list_of_companies": job_data.list_of_companies,
             "status": "request sent"
