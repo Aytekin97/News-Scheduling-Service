@@ -7,6 +7,8 @@ from database import SessionLocal, Base, engine
 from models import ScheduledJob
 from schemas import JobCreate, JobRead
 from loguru import logger
+from config import settings
+import requests
 import os
 
 
@@ -32,23 +34,69 @@ def list_jobs(db: Session = Depends(get_db)):
 
 @app.post("/scheduler/jobs", response_model=JobRead)
 def create_job(job_data: JobCreate, db: Session = Depends(get_db)):
-    logger.info("Calculating next run")
-    # Calculate the next_run_time based on the current date + run_time
-    initial_next_run = calculate_next_run_time_for_creation(job_data.frequency, job_data.run_time)
+    """
+    If frequency == 'Now', call the aggregator API immediately with 
+    (list_of_companies, number_of_days). Otherwise, schedule the job as normal.
+    """
+    logger.info("Request received")
 
-    logger.info("Creating the job")
-    job = ScheduledJob(
-        frequency=job_data.frequency,
-        run_time=job_data.run_time,
-        number_of_days=job_data.number_of_days,
-        list_of_companies=job_data.list_of_companies,
-        next_run_time=initial_next_run
-    )
-    db.add(job)
-    db.commit()
-    db.refresh(job)
-    logger.success("Job created and written on db")
-    return job
+    if job_data.frequency.lower() == 'now':
+        logger.info("User requested immediate job run.")
+        
+        # Prepare the payload for the aggregator service
+        payload = {
+            "companies": job_data.list_of_companies,
+            "number_of_days": job_data.number_of_days
+        }
+        
+        # Make the request to your aggregator
+        try:
+            logger.info(f"Sending immediate request to aggregator at {settings.aggregator_api_url}/process-news")
+            response = requests.post(
+                f"{settings.aggregator_api_url}/process-news",
+                json=payload,
+                timeout=30  # you can set a suitable timeout
+            )
+            response.raise_for_status()  # Raises an exception if 4xx/5xx
+        except requests.RequestException as e:
+            logger.error(f"Failed to run aggregator immediately: {e}")
+            raise HTTPException(status_code=502, detail="Aggregator service error")
+        
+        # If success, you may return aggregator's response data or a custom message
+        logger.success("Job ran immediately on aggregator.")
+        return {
+            "id": 0,  # or some placeholder, since no actual DB job was created
+            "frequency": "Now",
+            "run_time": "N/A",  # no scheduling
+            "number_of_days": job_data.number_of_days,
+            "list_of_companies": job_data.list_of_companies,
+            "status": "completed"  # or "immediate-run"
+        }
+
+    else:
+        logger.info("Scheduling a future job.")
+        
+        # Calculate the next_run_time based on the current date + run_time
+        initial_next_run = calculate_next_run_time_for_creation(
+            job_data.frequency, 
+            job_data.run_time
+        )
+
+        logger.info("Creating the scheduled job.")
+        job = ScheduledJob(
+            frequency=job_data.frequency,
+            run_time=job_data.run_time,
+            number_of_days=job_data.number_of_days,
+            list_of_companies=job_data.list_of_companies,
+            next_run_time=initial_next_run
+        )
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+        
+        logger.success("Job scheduled and stored in DB.")
+        return job
+
 
 @app.delete("/scheduler/jobs/{job_id}")
 def delete_job(job_id: int, db: Session = Depends(get_db)):
