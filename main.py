@@ -1,5 +1,5 @@
 # main.py
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta, time
 from typing import List
@@ -33,56 +33,43 @@ def list_jobs(db: Session = Depends(get_db)):
     return jobs
 
 @app.post("/scheduler/jobs", response_model=JobRead)
-def create_job(job_data: JobCreate, db: Session = Depends(get_db)):
-    """
-    If frequency == 'Now', call the aggregator API immediately with 
-    (list_of_companies, number_of_days). Otherwise, schedule the job as normal.
-    """
+def create_job(
+    job_data: JobCreate, 
+    db: Session = Depends(get_db),
+    background_tasks: BackgroundTasks = BackgroundTasks()
+):
     logger.info("Request received")
 
     if job_data.frequency.lower() == 'now':
         logger.info("User requested immediate job run.")
         
-        # Prepare the payload for the aggregator service
         payload = {
             "companies": job_data.list_of_companies,
             "number_of_days": job_data.number_of_days
         }
         
-        # Make the request to your aggregator
-        try:
-            logger.info(f"Sending immediate request to aggregator at {settings.aggregator_api_url}/process-news")
-            response = requests.post(
-                f"{settings.aggregator_api_url}/process-news",
-                json=payload,
-                timeout=30  # you can set a suitable timeout
-            )
-            response.raise_for_status()  # Raises an exception if 4xx/5xx
-        except requests.RequestException as e:
-            logger.error(f"Failed to run aggregator immediately: {e}")
-            raise HTTPException(status_code=502, detail="Aggregator service error")
+        # Schedule the aggregator call as a background task.
+        background_tasks.add_task(call_aggregator, settings.aggregator_api_url, payload)
         
-        # If success, you may return aggregator's response data or a custom message
-        logger.success("Job ran immediately on aggregator.")
+        logger.success("Aggregator job scheduled to run in background.")
+        # Return immediate response acknowledging the request.
         return {
-            "id": 0,  # or some placeholder, since no actual DB job was created
+            "id": 0,  # Placeholder, since we're not creating a DB entry.
             "frequency": "Now",
-            "run_time": "N/A",  # no scheduling
+            "run_time": None,
             "number_of_days": job_data.number_of_days,
             "list_of_companies": job_data.list_of_companies,
-            "status": "completed"  # or "immediate-run"
+            "status": "request sent"
         }
-
     else:
         logger.info("Scheduling a future job.")
         
-        # Calculate the next_run_time based on the current date + run_time
         initial_next_run = calculate_next_run_time_for_creation(
             job_data.frequency, 
             job_data.run_time
         )
 
-        logger.info("Creating the scheduled job.")
+        logger.info("Creating the scheduled job")
         job = ScheduledJob(
             frequency=job_data.frequency,
             run_time=job_data.run_time,
@@ -93,8 +80,7 @@ def create_job(job_data: JobCreate, db: Session = Depends(get_db)):
         db.add(job)
         db.commit()
         db.refresh(job)
-        
-        logger.success("Job scheduled and stored in DB.")
+        logger.success("Job scheduled and stored in DB")
         return job
 
 
@@ -112,6 +98,17 @@ def delete_job(job_id: int, db: Session = Depends(get_db)):
     
     db.commit()
     return {"detail": "Job deleted"}
+
+
+def call_aggregator(aggregator_url: str, payload: dict):
+    try:
+        # Make a POST request to the aggregator API.
+        response = requests.post(f"{aggregator_url}/process-news", json=payload, timeout=300)
+        response.raise_for_status()
+        # Optionally log success or handle response if needed.
+    except Exception as e:
+        # Log error or handle failure case.
+        logger.error(f"Error in background aggregator call: {e}")
 
 
 def calculate_next_run_time_for_creation(frequency: str, run_time: time) -> datetime:
