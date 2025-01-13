@@ -12,13 +12,9 @@ class Settings(BaseSettings):
 
     db_url: str
     aggregator_api_url: str
-    
+
     def __init__(self, **data):
         super().__init__(**data)
-        # Parse DB_URL as a list if it's a comma-separated string
-        if isinstance(self.db_url, str):
-            self.db_url = [url.strip() for url in self.db_url.split(",")]
-
 
 def load_settings():
     try:
